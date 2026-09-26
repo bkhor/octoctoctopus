@@ -22,3 +22,13 @@ class StubEmbeddingClient:
         raw = struct.unpack(f"{self.dims}i", digest[: self.dims * 4])
         norm = sum(v * v for v in raw) ** 0.5 or 1.0
         return [v / norm for v in raw]
+
+
+class BgeEmbeddingClient:
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5") -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self._model = SentenceTransformer(model_name, device="cpu")
+
+    def embed(self, text: str) -> list[float]:
+        return self._model.encode(text, normalize_embeddings=True).tolist()

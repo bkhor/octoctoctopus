@@ -6,6 +6,7 @@ dependencies = ["pyyaml>=6.0", "requests>=2.32"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+embeddings = ["sentence-transformers>=3.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
