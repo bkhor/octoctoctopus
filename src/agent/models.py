@@ -22,3 +22,7 @@ class FieldSpec:
     field_type: str
     options: list[str] = field(default_factory=list)
     required: bool = False
+
+
+class FormUnparseable(Exception):
+    pass

@@ -3,7 +3,7 @@ from typing import Protocol
 from . import db, memory
 from .embedding_client import EmbeddingClient
 from .llm_client import LLMClient
-from .models import ApplicationState, FieldSpec
+from .models import ApplicationState, FieldSpec, FormUnparseable
 
 FORMAL_CATEGORY = "formal"
 
@@ -17,7 +17,7 @@ class FormFiller(Protocol):
     def fill(self, url: str, field_values: dict[str, str]) -> None:
         ...
 
-    def submit(self, url: str) -> None:
+    def submit(self, url: str, field_values: dict[str, str]) -> None:
         ...
 
 
@@ -38,7 +38,10 @@ def step(
         return _to(conn, app_id, ApplicationState.FETCHING)
 
     if state == ApplicationState.FETCHING.value:
-        fields = fetcher.fetch_fields(app["url"])
+        try:
+            fields = fetcher.fetch_fields(app["url"])
+        except FormUnparseable:
+            return _to(conn, app_id, ApplicationState.MANUAL_FALLBACK)
         for f in fields:
             db.add_field(conn, app_id, f.label, f.field_type)
         return _to(conn, app_id, ApplicationState.CLASSIFYING)
@@ -96,7 +99,10 @@ def approve(conn, app_id: int, *, filler: FormFiller) -> str:
     app = db.get_application(conn, app_id)
     if app["state"] != ApplicationState.READY_FOR_REVIEW.value:
         return app["state"]
-    filler.submit(app["url"])
+    field_values = {
+        row["label"]: row["resolved_value"] for row in db.list_fields(conn, app_id)
+    }
+    filler.submit(app["url"], field_values)
     return _to(conn, app_id, ApplicationState.DONE)
 
 
@@ -127,6 +133,14 @@ def _classify_fields(conn, app_id: int, llm: LLMClient) -> None:
 def _resolve_formal_fields(conn, app_id: int, profile: dict[str, str]) -> None:
     fields = db.list_fields(conn, app_id)
     for row in fields:
+        if row["field_type"] == "file":
+            key = row["label"].lower().replace(" ", "_")
+            value = profile.get(key)
+            if value is not None:
+                db.update_field(conn, row["id"], resolved_value=value, needs_input=False, resolved_from="static_attachment")
+            else:
+                db.update_field(conn, row["id"], needs_input=True)
+            continue
         if row["category"] != FORMAL_CATEGORY:
             continue
         key = row["label"].lower().replace(" ", "_")
@@ -141,6 +155,10 @@ def _resolve_informal_fields(conn, app_id: int, llm: LLMClient, embedder: Embedd
     fields = db.list_fields(conn, app_id)
     gap = False
     for row in fields:
+        if row["field_type"] == "file":
+            if row["needs_input"]:
+                gap = True
+            continue
         if row["category"] == FORMAL_CATEGORY:
             continue
         if row["resolved_value"] is not None:

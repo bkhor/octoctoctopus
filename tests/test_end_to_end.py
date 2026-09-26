@@ -20,7 +20,7 @@ class StubFiller:
     def fill(self, url, field_values):
         self.filled = field_values
 
-    def submit(self, url):
+    def submit(self, url, field_values):
         self.submitted = True
 
 
