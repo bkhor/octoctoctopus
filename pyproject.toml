@@ -9,6 +9,9 @@ dev = ["pytest>=8.0"]
 embeddings = ["sentence-transformers>=3.0"]
 browser = ["playwright>=1.40"]
 
+[project.scripts]
+octo = "agent.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
