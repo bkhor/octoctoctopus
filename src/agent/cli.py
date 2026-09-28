@@ -100,17 +100,25 @@ def cmd_rerun(conn, app_id: int) -> None:
     db.reset_application(conn, app_id)
 
 
+IGNORE_KEYWORDS = ("skip", "n/a", "na", "ignore")
+
+
 def cmd_hitl_shell(conn, llm, embedder, app_id: int, input_fn=input) -> None:
     fields = db.list_fields(conn, app_id)
     pending_file_fields = [row for row in fields if row["needs_input"] and row["field_type"] == "file"]
     answerable = [row for row in fields if row["needs_input"] and row["field_type"] != "file"]
     answered = 0
     skipped = 0
+    ignored = 0
     for row in answerable:
         print(row["label"])
         answer = input_fn("> ").strip()
         if not answer:
             skipped += 1
+            continue
+        if answer.lower() in IGNORE_KEYWORDS:
+            db.update_field(conn, row["id"], resolved_value="", needs_input=False, resolved_from="ignored")
+            ignored += 1
             continue
         category = memory.categorize(llm, row["label"])
         orchestrator.resume_after_hitl(
@@ -118,7 +126,7 @@ def cmd_hitl_shell(conn, llm, embedder, app_id: int, input_fn=input) -> None:
             field_id=row["id"], category=category, answer_text=answer,
         )
         answered += 1
-    print(f"{answered} answered, {skipped} skipped")
+    print(f"{answered} answered, {skipped} skipped, {ignored} ignored")
     for row in pending_file_fields:
         print(f"file field still needs input, add to profile.yaml: {row['label']}")
 

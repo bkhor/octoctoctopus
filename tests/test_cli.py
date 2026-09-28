@@ -250,12 +250,28 @@ def test_cmd_hitl_shell_answers_and_skips_fields(capsys):
     cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=input_fn)
 
     captured = capsys.readouterr()
-    assert "1 answered, 1 skipped" in captured.out
+    assert "1 answered, 1 skipped, 0 ignored" in captured.out
     answered_row = db.list_fields(conn, app_id)[0]
     assert answered_row["resolved_value"] == "I value mission-driven teams"
     assert answered_row["needs_input"] == 0
     skipped_row = db.list_fields(conn, app_id)[1]
     assert skipped_row["needs_input"] == 1
+
+
+def test_cmd_hitl_shell_permanently_ignores_field_on_keyword():
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "field_6", "text")
+    db.update_field(conn, field_id, needs_input=True)
+    llm = StubLLMClient()
+    embedder = StubEmbeddingClient()
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=lambda prompt: "skip")
+
+    field_row = db.list_fields(conn, app_id)[0]
+    assert field_row["needs_input"] == 0
+    assert field_row["resolved_value"] == ""
+    assert field_row["resolved_from"] == "ignored"
 
 
 def test_cmd_hitl_shell_reports_pending_file_fields_without_prompting(capsys):

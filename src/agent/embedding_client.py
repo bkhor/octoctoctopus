@@ -26,6 +26,17 @@ class StubEmbeddingClient:
 
 class BgeEmbeddingClient:
     def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5") -> None:
+        import os
+
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+        os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+        try:
+            from huggingface_hub.utils import disable_progress_bars
+            disable_progress_bars()
+        except ImportError:
+            pass
+
         from sentence_transformers import SentenceTransformer
 
         self._model = SentenceTransformer(model_name, device="cpu")
