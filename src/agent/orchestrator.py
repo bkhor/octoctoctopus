@@ -168,8 +168,6 @@ def _resolve_informal_fields(conn, app_id: int, llm: LLMClient, embedder: Embedd
             if row["needs_input"]:
                 gap = True
             continue
-        if row["category"] == FORMAL_CATEGORY:
-            continue
         if row["resolved_value"] is not None:
             continue
         result = memory.retrieve(conn, llm, embedder, row["label"])

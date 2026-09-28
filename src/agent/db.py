@@ -136,6 +136,26 @@ def list_fields(conn: sqlite3.Connection, application_id: int) -> list[sqlite3.R
     ).fetchall()
 
 
+def delete_fields_for_application(conn: sqlite3.Connection, app_id: int) -> None:
+    conn.execute("DELETE FROM application_fields WHERE application_id = ?", (app_id,))
+    conn.commit()
+
+
+def delete_application(conn: sqlite3.Connection, app_id: int) -> None:
+    get_application(conn, app_id)
+    delete_fields_for_application(conn, app_id)
+    conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+    conn.commit()
+
+
+def reset_application(conn: sqlite3.Connection, app_id: int) -> None:
+    conn.execute(
+        "UPDATE applications SET state = 'queued', cover_letter_draft = NULL, updated_at = ? WHERE id = ?",
+        (_now(), app_id),
+    )
+    conn.commit()
+
+
 def add_memory_entry(
     conn: sqlite3.Connection,
     question: str,

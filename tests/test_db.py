@@ -68,6 +68,51 @@ def test_add_and_list_fields():
     assert fields[0]["needs_input"] == 0
 
 
+def test_delete_application_removes_application_and_fields():
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    app_id = db.create_application(conn, "https://example.com/job")
+    db.add_field(conn, app_id, "Full name", "text")
+
+    db.delete_application(conn, app_id)
+
+    try:
+        db.get_application(conn, app_id)
+        assert False
+    except KeyError:
+        pass
+    assert db.list_fields(conn, app_id) == []
+
+
+def test_delete_fields_for_application_clears_only_that_applications_fields():
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    app_id = db.create_application(conn, "https://example.com/job")
+    other_app_id = db.create_application(conn, "https://example.com/other")
+    db.add_field(conn, app_id, "Full name", "text")
+    db.add_field(conn, other_app_id, "Email", "text")
+
+    db.delete_fields_for_application(conn, app_id)
+
+    assert db.list_fields(conn, app_id) == []
+    assert len(db.list_fields(conn, other_app_id)) == 1
+
+
+def test_reset_application_returns_to_queued_and_clears_cover_letter():
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    app_id = db.create_application(conn, "https://example.com/job")
+    db.update_application_state(conn, app_id, "ready_for_review")
+    conn.execute("UPDATE applications SET cover_letter_draft = ? WHERE id = ?", ("Dear team...", app_id))
+    conn.commit()
+
+    db.reset_application(conn, app_id)
+
+    row = db.get_application(conn, app_id)
+    assert row["state"] == "queued"
+    assert row["cover_letter_draft"] is None
+
+
 def test_add_and_query_memory_by_category():
     conn = db.connect(":memory:")
     db.init_schema(conn)

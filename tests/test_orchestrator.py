@@ -241,6 +241,37 @@ def test_file_field_without_profile_path_needs_input():
     assert field_row["needs_input"] == 1
 
 
+def test_unresolved_formal_field_falls_back_to_memory():
+    conn, app_id = _setup()
+    fields = [FieldSpec(label="Email Address", field_type="text")]
+    fetcher = StubFetcher(fields)
+    filler = StubFiller()
+    llm = StubLLMClient()
+    llm.register("classify_fields", {
+        "fields": [{"index": 0, "is_formal": True}]
+    })
+    llm.register("Email Address", {"category": "contact", "answer": "jane@example.com"})
+    llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
+    embedder = StubEmbeddingClient()
+    vector = embedder.embed("Email Address")
+    db.add_memory_entry(conn, "Email Address", "jane@example.com", memory._pack(vector), "contact")
+    db.add_memory_entry(conn, "Email Address", "jane@example.com", memory._pack(vector), "contact")
+    profile = {}
+
+    state = None
+    for _ in range(10):
+        state = orchestrator.step(
+            conn, app_id, llm=llm, embedder=embedder, fetcher=fetcher, filler=filler, profile=profile
+        )
+        if state in (ApplicationState.AWAITING_HITL.value, ApplicationState.READY_FOR_REVIEW.value):
+            break
+
+    field_row = db.list_fields(conn, app_id)[0]
+    assert field_row["resolved_value"] == "jane@example.com"
+    assert field_row["resolved_from"] == "memory"
+    assert state == ApplicationState.READY_FOR_REVIEW.value
+
+
 def test_file_field_with_memory_match_is_not_clobbered_by_synthesis():
     conn, app_id = _setup()
     fields = [FieldSpec(label="Resume", field_type="file")]

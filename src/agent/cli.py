@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import db, orchestrator
+from . import db, memory, orchestrator
 from .config import load_config
 from .embedding_client import BgeEmbeddingClient
 from .llm_client import OllamaClient
@@ -90,6 +90,39 @@ def cmd_approve(conn, app_id: int, filler) -> str:
     return orchestrator.approve(conn, app_id, filler=filler)
 
 
+def cmd_remove(conn, app_id: int) -> None:
+    db.delete_application(conn, app_id)
+
+
+def cmd_rerun(conn, app_id: int) -> None:
+    db.get_application(conn, app_id)
+    db.delete_fields_for_application(conn, app_id)
+    db.reset_application(conn, app_id)
+
+
+def cmd_hitl_shell(conn, llm, embedder, app_id: int, input_fn=input) -> None:
+    fields = db.list_fields(conn, app_id)
+    pending_file_fields = [row for row in fields if row["needs_input"] and row["field_type"] == "file"]
+    answerable = [row for row in fields if row["needs_input"] and row["field_type"] != "file"]
+    answered = 0
+    skipped = 0
+    for row in answerable:
+        print(row["label"])
+        answer = input_fn("> ").strip()
+        if not answer:
+            skipped += 1
+            continue
+        category = memory.categorize(llm, row["label"])
+        orchestrator.resume_after_hitl(
+            conn, app_id, llm=llm, embedder=embedder,
+            field_id=row["id"], category=category, answer_text=answer,
+        )
+        answered += 1
+    print(f"{answered} answered, {skipped} skipped")
+    for row in pending_file_fields:
+        print(f"file field still needs input, add to profile.yaml: {row['label']}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="octo")
     parser.add_argument("--config", default="./config.yaml")
@@ -111,6 +144,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     approve_parser = subparsers.add_parser("approve")
     approve_parser.add_argument("app_id", type=int)
+
+    remove_parser = subparsers.add_parser("remove")
+    remove_parser.add_argument("app_id", type=int)
+
+    rerun_parser = subparsers.add_parser("rerun")
+    rerun_parser.add_argument("app_id", type=int)
+
+    hitl_shell_parser = subparsers.add_parser("hitl-shell")
+    hitl_shell_parser.add_argument("app_id", type=int)
 
     return parser
 
@@ -155,6 +197,14 @@ def main(argv: list[str] | None = None) -> None:
         llm = OllamaClient(base_url=settings["ollama_base_url"], model=settings["ollama_model"])
         embedder = BgeEmbeddingClient(model_name=settings["bge_model"])
         cmd_hitl(conn, llm, embedder, args.field_id, args.category, args.answer)
+    elif args.command == "remove":
+        cmd_remove(conn, args.app_id)
+    elif args.command == "rerun":
+        cmd_rerun(conn, args.app_id)
+    elif args.command == "hitl-shell":
+        llm = OllamaClient(base_url=settings["ollama_base_url"], model=settings["ollama_model"])
+        embedder = BgeEmbeddingClient(model_name=settings["bge_model"])
+        cmd_hitl_shell(conn, llm, embedder, args.app_id)
     elif args.command == "approve":
         from playwright.sync_api import sync_playwright
 

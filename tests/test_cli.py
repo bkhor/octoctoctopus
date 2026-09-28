@@ -204,3 +204,92 @@ def test_main_submit_and_status_end_to_end(tmp_path, capsys):
 def test_main_raises_on_explicit_missing_config():
     with pytest.raises(FileNotFoundError):
         cli.main(["--config", "/nonexistent/path/config.yaml", "status"])
+
+
+def test_cmd_remove_deletes_application():
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+
+    cli.cmd_remove(conn, app_id)
+
+    try:
+        db.get_application(conn, app_id)
+        assert False
+    except KeyError:
+        pass
+
+
+def test_cmd_rerun_resets_application_and_clears_fields():
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    db.update_application_state(conn, app_id, ApplicationState.READY_FOR_REVIEW.value)
+    db.add_field(conn, app_id, "Full name", "text")
+
+    cli.cmd_rerun(conn, app_id)
+
+    app = db.get_application(conn, app_id)
+    assert app["state"] == ApplicationState.QUEUED.value
+    assert db.list_fields(conn, app_id) == []
+
+
+def test_cmd_hitl_shell_answers_and_skips_fields(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    db.update_application_state(conn, app_id, ApplicationState.AWAITING_HITL.value)
+    answered_field_id = db.add_field(conn, app_id, "Why this company?", "textarea")
+    db.update_field(conn, answered_field_id, needs_input=True)
+    skipped_field_id = db.add_field(conn, app_id, "Favorite color?", "text")
+    db.update_field(conn, skipped_field_id, needs_input=True)
+    llm = StubLLMClient()
+    llm.register("Why this company?", {"category": "motivation"})
+    llm.register("I value mission-driven teams", {"canonical_answer": "I value mission-driven teams"})
+    embedder = StubEmbeddingClient()
+    answers = iter(["I value mission-driven teams", ""])
+    input_fn = lambda prompt: next(answers)
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=input_fn)
+
+    captured = capsys.readouterr()
+    assert "1 answered, 1 skipped" in captured.out
+    answered_row = db.list_fields(conn, app_id)[0]
+    assert answered_row["resolved_value"] == "I value mission-driven teams"
+    assert answered_row["needs_input"] == 0
+    skipped_row = db.list_fields(conn, app_id)[1]
+    assert skipped_row["needs_input"] == 1
+
+
+def test_cmd_hitl_shell_reports_pending_file_fields_without_prompting(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Resume", "file")
+    db.update_field(conn, field_id, needs_input=True)
+    llm = StubLLMClient()
+    embedder = StubEmbeddingClient()
+
+    def _unexpected_input(prompt):
+        raise AssertionError("should not prompt for file fields")
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=_unexpected_input)
+
+    captured = capsys.readouterr()
+    assert "Resume" in captured.out
+    assert "0 answered, 0 skipped" in captured.out
+
+
+def test_main_remove_and_rerun_end_to_end(tmp_path, capsys):
+    db_path = tmp_path / "test.db"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"db_path: {db_path}\n")
+
+    cli.main(["--config", str(config_path), "submit", "https://example.com/job"])
+    capsys.readouterr()
+
+    cli.main(["--config", str(config_path), "rerun", "1"])
+    cli.main(["--config", str(config_path), "status"])
+    status_captured = capsys.readouterr()
+    assert "queued" in status_captured.out
+
+    cli.main(["--config", str(config_path), "remove", "1"])
+    cli.main(["--config", str(config_path), "status"])
+    final_captured = capsys.readouterr()
+    assert "https://example.com/job" not in final_captured.out
