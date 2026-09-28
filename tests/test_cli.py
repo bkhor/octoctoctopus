@@ -55,6 +55,19 @@ def test_cmd_review_prints_fields_and_cover_letter(capsys):
     assert "Why this company?: None (needs input)" in captured.out
 
 
+def test_cmd_review_shows_options_for_pending_select_field(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Preferred Location", "select", options=["Remote", "New York"])
+    db.update_field(conn, field_id, needs_input=True)
+
+    cli.cmd_review(conn, app_id)
+
+    captured = capsys.readouterr()
+    assert "1. Remote" in captured.out
+    assert "2. New York" in captured.out
+
+
 class StubFetcher:
     def __init__(self, fields):
         self._fields = fields
@@ -256,6 +269,76 @@ def test_cmd_hitl_shell_answers_and_skips_fields(capsys):
     assert answered_row["needs_input"] == 0
     skipped_row = db.list_fields(conn, app_id)[1]
     assert skipped_row["needs_input"] == 1
+
+
+def test_cmd_hitl_shell_select_field_shows_numbered_options(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Preferred Location", "select", options=["Remote", "New York"])
+    db.update_field(conn, field_id, needs_input=True)
+    llm = StubLLMClient()
+    llm.register("Preferred Location", {"category": "logistics"})
+    llm.register("New York", {"canonical_answer": "New York"})
+    embedder = StubEmbeddingClient()
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=lambda prompt: "2")
+
+    captured = capsys.readouterr()
+    assert "1. Remote" in captured.out
+    assert "2. New York" in captured.out
+    field_row = db.list_fields(conn, app_id)[0]
+    assert field_row["resolved_value"] == "New York"
+    assert field_row["needs_input"] == 0
+
+
+def test_cmd_hitl_shell_select_field_invalid_choice_is_skipped(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Preferred Location", "select", options=["Remote", "New York"])
+    db.update_field(conn, field_id, needs_input=True)
+    llm = StubLLMClient()
+    embedder = StubEmbeddingClient()
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=lambda prompt: "99")
+
+    captured = capsys.readouterr()
+    assert "invalid choice" in captured.out
+    assert "0 answered, 1 skipped, 0 ignored" in captured.out
+    field_row = db.list_fields(conn, app_id)[0]
+    assert field_row["needs_input"] == 1
+
+
+def test_cmd_hitl_shell_radio_field_shows_numbered_options(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Require visa sponsorship?", "radio", options=["Yes", "No"])
+    db.update_field(conn, field_id, needs_input=True)
+    llm = StubLLMClient()
+    llm.register("Require visa sponsorship?", {"category": "eligibility"})
+    llm.register("No", {"canonical_answer": "No"})
+    embedder = StubEmbeddingClient()
+
+    cli.cmd_hitl_shell(conn, llm, embedder, app_id, input_fn=lambda prompt: "2")
+
+    captured = capsys.readouterr()
+    assert "1. Yes" in captured.out
+    assert "2. No" in captured.out
+    field_row = db.list_fields(conn, app_id)[0]
+    assert field_row["resolved_value"] == "No"
+    assert field_row["needs_input"] == 0
+
+
+def test_cmd_review_shows_options_for_pending_radio_field(capsys):
+    conn = _setup()
+    app_id = db.create_application(conn, "https://example.com/job")
+    field_id = db.add_field(conn, app_id, "Require visa sponsorship?", "radio", options=["Yes", "No"])
+    db.update_field(conn, field_id, needs_input=True)
+
+    cli.cmd_review(conn, app_id)
+
+    captured = capsys.readouterr()
+    assert "1. Yes" in captured.out
+    assert "2. No" in captured.out
 
 
 def test_cmd_hitl_shell_permanently_ignores_field_on_keyword():

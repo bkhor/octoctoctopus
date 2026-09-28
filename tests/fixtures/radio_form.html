@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<body>
+<form>
+  <div>
+    <label for="full_name">Full Name</label>
+    <input id="full_name" type="text" name="full_name">
+  </div>
+  <div>
+    <label>Do you currently, or will you in the future, require visa sponsorship?</label>
+    <div>
+      <input type="radio" id="visa_yes" name="visa" value="true" required>
+      <label for="visa_yes">Yes</label>
+    </div>
+    <div>
+      <input type="radio" id="visa_no" name="visa" value="false">
+      <label for="visa_no">No</label>
+    </div>
+  </div>
+  <div>
+    <label>Are you currently located within commutable distance?</label>
+    <div>
+      <input type="radio" id="commute_yes" name="commute" value="true">
+      <label for="commute_yes">Yes</label>
+    </div>
+    <div>
+      <input type="radio" id="commute_no" name="commute" value="false">
+      <label for="commute_no">No</label>
+    </div>
+  </div>
+  <button type="submit">Submit Application</button>
+</form>
+</body>
+</html>

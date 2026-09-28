@@ -134,6 +134,79 @@ def test_apply_value_sets_file_input(page):
     assert field.locator.evaluate("el => el.files.length") == 1
 
 
+def test_extract_fields_groups_radio_buttons_into_one_field_per_group(page):
+    from agent.browser import _extract_fields
+
+    page.goto(_fixture_url("radio_form.html"))
+    extracted = _extract_fields(page)
+
+    assert len(extracted) == 3
+    by_label = {e.spec.label: e for e in extracted}
+    visa = by_label["Do you currently, or will you in the future, require visa sponsorship?"]
+    assert visa.spec.field_type == "radio"
+    assert visa.spec.options == ["Yes", "No"]
+    assert visa.spec.required is True
+    assert visa.label_resolved is True
+    assert set(visa.option_locators.keys()) == {"Yes", "No"}
+    commute = by_label["Are you currently located within commutable distance?"]
+    assert commute.spec.field_type == "radio"
+    assert commute.spec.options == ["Yes", "No"]
+    assert commute.spec.required is False
+    assert by_label["Full Name"].spec.field_type == "text"
+
+
+def test_apply_radio_value_checks_the_matching_option(page):
+    from agent.browser import _apply_radio_value, _extract_fields
+
+    page.goto(_fixture_url("radio_form.html"))
+    extracted = _extract_fields(page)
+    visa = next(e for e in extracted if e.spec.label.startswith("Do you currently"))
+
+    result = _apply_radio_value(visa, "No")
+
+    assert result is True
+    assert visa.option_locators["No"].is_checked() is True
+    assert visa.option_locators["Yes"].is_checked() is False
+
+
+def test_apply_radio_value_returns_false_for_unknown_option(page):
+    from agent.browser import _apply_radio_value, _extract_fields
+
+    page.goto(_fixture_url("radio_form.html"))
+    extracted = _extract_fields(page)
+    visa = next(e for e in extracted if e.spec.label.startswith("Do you currently"))
+
+    result = _apply_radio_value(visa, "Maybe")
+
+    assert result is False
+    assert visa.option_locators["Yes"].is_checked() is False
+    assert visa.option_locators["No"].is_checked() is False
+
+
+def test_fetch_fields_includes_radio_fields(browser):
+    from agent.browser import PlaywrightPageFetcher
+
+    fetcher = PlaywrightPageFetcher(browser)
+    fields = fetcher.fetch_fields(_fixture_url("radio_form.html"))
+
+    labels = {f.label: f for f in fields}
+    visa_label = "Do you currently, or will you in the future, require visa sponsorship?"
+    assert visa_label in labels
+    assert labels[visa_label].field_type == "radio"
+    assert labels[visa_label].options == ["Yes", "No"]
+
+
+def test_fill_applies_radio_selection_without_raising(browser):
+    from agent.browser import PlaywrightFormFiller
+
+    filler = PlaywrightFormFiller(browser)
+    filler.fill(_fixture_url("radio_form.html"), {
+        "Full Name": "Jane Doe",
+        "Do you currently, or will you in the future, require visa sponsorship?": "No",
+        "Are you currently located within commutable distance?": "Yes",
+    })
+
+
 def test_fetch_fields_returns_field_specs_for_wellformed_form(browser):
     from agent.browser import PlaywrightPageFetcher
 

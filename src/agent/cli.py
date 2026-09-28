@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +30,9 @@ def cmd_review(conn, app_id: int) -> None:
     for row in db.list_fields(conn, app_id):
         marker = " (needs input)" if row["needs_input"] else ""
         print(f"  {row['label']}: {row['resolved_value']}{marker}")
+        if row["needs_input"] and row["field_type"] in ("select", "radio") and row["options"]:
+            for i, opt in enumerate(json.loads(row["options"]), start=1):
+                print(f"    {i}. {opt}")
     if app["cover_letter_draft"]:
         print("cover letter:")
         print(app["cover_letter_draft"])
@@ -112,14 +116,31 @@ def cmd_hitl_shell(conn, llm, embedder, app_id: int, input_fn=input) -> None:
     ignored = 0
     for row in answerable:
         print(row["label"])
-        answer = input_fn("> ").strip()
-        if not answer:
+        options = json.loads(row["options"]) if row["options"] else []
+        is_select = row["field_type"] in ("select", "radio") and options
+        if is_select:
+            for i, opt in enumerate(options, start=1):
+                print(f"  {i}. {opt}")
+        raw = input_fn("> ").strip()
+        if not raw:
             skipped += 1
             continue
-        if answer.lower() in IGNORE_KEYWORDS:
+        if raw.lower() in IGNORE_KEYWORDS:
             db.update_field(conn, row["id"], resolved_value="", needs_input=False, resolved_from="ignored")
             ignored += 1
             continue
+        if is_select:
+            try:
+                choice = int(raw)
+            except ValueError:
+                choice = 0
+            if choice < 1 or choice > len(options):
+                print("invalid choice, skipped")
+                skipped += 1
+                continue
+            answer = options[choice - 1]
+        else:
+            answer = raw
         category = memory.categorize(llm, row["label"])
         orchestrator.resume_after_hitl(
             conn, app_id, llm=llm, embedder=embedder,

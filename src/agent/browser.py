@@ -21,20 +21,7 @@ EXTRACT_SCRIPT = """
     const text = clone.textContent.trim();
     return text || null;
   }
-  const candidates = Array.from(document.querySelectorAll('input, textarea, select'));
-  const results = [];
-  let index = 0;
-  for (const el of candidates) {
-    const tag = el.tagName.toLowerCase();
-    const type = (el.getAttribute('type') || '').toLowerCase();
-    if (tag === 'input' && ['hidden', 'submit', 'button', 'reset', 'radio'].includes(type)) continue;
-
-    let fieldType = 'text';
-    if (tag === 'textarea') fieldType = 'textarea';
-    else if (tag === 'select') fieldType = 'select';
-    else if (type === 'checkbox') fieldType = 'checkbox';
-    else if (type === 'file') fieldType = 'file';
-
+  function resolveLabel(el, index) {
     let label = getLabelForId(el.id);
     let resolved = label !== null && label !== '';
     if (!resolved) {
@@ -59,6 +46,78 @@ EXTRACT_SCRIPT = """
     if (!resolved) {
       label = `field_${index}`;
     }
+    return { label, resolved };
+  }
+  function groupLabelFor(radios, optionTexts) {
+    let ancestor = radios[0].parentElement;
+    while (ancestor && !radios.every(r => ancestor.contains(r))) {
+      ancestor = ancestor.parentElement;
+    }
+    if (!ancestor) return null;
+    const optionTextSet = new Set(optionTexts);
+    const labels = Array.from(ancestor.querySelectorAll('label'));
+    for (const lbl of labels) {
+      const text = lbl.textContent.trim();
+      if (text && !optionTextSet.has(text)) return text;
+    }
+    return null;
+  }
+
+  const allInputs = Array.from(document.querySelectorAll('input, textarea, select'));
+  const results = [];
+  let index = 0;
+
+  const radioGroups = {};
+  for (const el of allInputs) {
+    const isRadio = el.tagName.toLowerCase() === 'input' && (el.getAttribute('type') || '').toLowerCase() === 'radio';
+    if (isRadio && el.name) {
+      if (!radioGroups[el.name]) radioGroups[el.name] = [];
+      radioGroups[el.name].push(el);
+    }
+  }
+
+  const handledRadios = new Set();
+  for (const name in radioGroups) {
+    const radios = radioGroups[name];
+    const optionResults = radios.map((r, i) => {
+      const { label } = resolveLabel(r, index + i);
+      return { element: r, text: label };
+    });
+    const optionTexts = optionResults.map(o => o.text);
+    const groupLabel = groupLabelFor(radios, optionTexts);
+    const resolved = groupLabel !== null;
+    const finalLabel = groupLabel !== null ? groupLabel : `field_${index}`;
+    const radioOptions = [];
+    for (const opt of optionResults) {
+      opt.element.setAttribute('data-octo-index', String(index));
+      radioOptions.push({ text: opt.text, octo_index: index });
+      handledRadios.add(opt.element);
+      index++;
+    }
+    results.push({
+      label: finalLabel,
+      field_type: 'radio',
+      options: radioOptions.map(o => o.text),
+      required: radios.some(r => r.hasAttribute('required')),
+      label_resolved: resolved,
+      octo_index: null,
+      radio_options: radioOptions,
+    });
+  }
+
+  for (const el of allInputs) {
+    const tag = el.tagName.toLowerCase();
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (handledRadios.has(el)) continue;
+    if (tag === 'input' && ['hidden', 'submit', 'button', 'reset', 'radio'].includes(type)) continue;
+
+    let fieldType = 'text';
+    if (tag === 'textarea') fieldType = 'textarea';
+    else if (tag === 'select') fieldType = 'select';
+    else if (type === 'checkbox') fieldType = 'checkbox';
+    else if (type === 'file') fieldType = 'file';
+
+    const { label, resolved } = resolveLabel(el, index);
 
     const options = tag === 'select'
       ? Array.from(el.querySelectorAll('option')).map(o => o.textContent.trim())
@@ -72,9 +131,11 @@ EXTRACT_SCRIPT = """
       required: el.hasAttribute('required'),
       label_resolved: resolved,
       octo_index: index,
+      radio_options: null,
     });
     index++;
   }
+
   return results;
 }
 """
@@ -83,8 +144,9 @@ EXTRACT_SCRIPT = """
 @dataclass
 class ExtractedField:
     spec: FieldSpec
-    locator: Locator
+    locator: Locator | None
     label_resolved: bool
+    option_locators: dict[str, Locator] | None = None
 
 
 def _extract_fields(page: Page) -> list[ExtractedField]:
@@ -97,8 +159,18 @@ def _extract_fields(page: Page) -> list[ExtractedField]:
             options=item["options"],
             required=item["required"],
         )
-        locator = page.locator(f'[data-octo-index="{item["octo_index"]}"]')
-        extracted.append(ExtractedField(spec=spec, locator=locator, label_resolved=item["label_resolved"]))
+        if item["field_type"] == "radio":
+            option_locators = {
+                opt["text"]: page.locator(f'[data-octo-index="{opt["octo_index"]}"]')
+                for opt in item["radio_options"]
+            }
+            extracted.append(ExtractedField(
+                spec=spec, locator=None, label_resolved=item["label_resolved"],
+                option_locators=option_locators,
+            ))
+        else:
+            locator = page.locator(f'[data-octo-index="{item["octo_index"]}"]')
+            extracted.append(ExtractedField(spec=spec, locator=locator, label_resolved=item["label_resolved"]))
     return extracted
 
 
@@ -114,6 +186,14 @@ def _apply_value(locator: Locator, field_type: str, value: str) -> None:
             locator.uncheck()
     elif field_type == "file":
         locator.set_input_files(value)
+
+
+def _apply_radio_value(extracted: ExtractedField, value: str) -> bool:
+    option_locator = extracted.option_locators.get(value)
+    if option_locator is None:
+        return False
+    option_locator.check()
+    return True
 
 
 class PlaywrightPageFetcher:
@@ -151,6 +231,10 @@ class PlaywrightFormFiller:
                 value = field_values.get(e.spec.label)
                 if value is None:
                     continue
+                if e.spec.field_type == "radio":
+                    if _apply_radio_value(e, value):
+                        applied_count += 1
+                    continue
                 _apply_value(e.locator, e.spec.field_type, value)
                 applied_count += 1
             if extracted and applied_count == 0:
@@ -168,6 +252,10 @@ class PlaywrightFormFiller:
             for e in extracted:
                 value = field_values.get(e.spec.label)
                 if value is None:
+                    continue
+                if e.spec.field_type == "radio":
+                    if _apply_radio_value(e, value):
+                        applied_count += 1
                     continue
                 _apply_value(e.locator, e.spec.field_type, value)
                 applied_count += 1
