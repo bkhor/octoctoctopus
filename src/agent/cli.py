@@ -30,8 +30,9 @@ def cmd_review(conn, app_id: int) -> None:
     for row in db.list_fields(conn, app_id):
         marker = " (needs input)" if row["needs_input"] else ""
         print(f"  {row['label']}: {row['resolved_value']}{marker}")
-        if row["needs_input"] and row["field_type"] in ("select", "radio") and row["options"]:
-            for i, opt in enumerate(json.loads(row["options"]), start=1):
+        options_raw = dict(row).get("options")
+        if row["needs_input"] and row["field_type"] in ("select", "radio") and options_raw:
+            for i, opt in enumerate(json.loads(options_raw), start=1):
                 print(f"    {i}. {opt}")
     if app["cover_letter_draft"]:
         print("cover letter:")
@@ -116,7 +117,8 @@ def cmd_hitl_shell(conn, llm, embedder, app_id: int, input_fn=input) -> None:
     ignored = 0
     for row in answerable:
         print(row["label"])
-        options = json.loads(row["options"]) if row["options"] else []
+        options_raw = dict(row).get("options")
+        options = json.loads(options_raw) if options_raw else []
         is_select = row["field_type"] in ("select", "radio") and options
         if is_select:
             for i, opt in enumerate(options, start=1):

@@ -84,13 +84,33 @@ def test_retrieve_returns_weak_match_between_thresholds():
     assert result["confidence"] == "weak"
 
 
+class SpyLLMClient:
+    def __init__(self, response):
+        self._response = response
+        self.last_user_prompt = None
+
+    def complete_json(self, system_prompt, user_prompt, schema_hint):
+        self.last_user_prompt = user_prompt
+        return self._response
+
+
 def test_synthesize_answer_calls_llm_with_candidates():
     llm = StubLLMClient()
-    llm.register("why join?", {"answer": "Blended answer"})
+    llm.register("ans A", {"answer": "Blended answer"})
 
     answer = memory.synthesize_answer(llm, "why join?", ["ans A", "ans B"])
 
     assert answer == "Blended answer"
+
+
+def test_synthesize_answer_sends_question_and_all_candidates_to_llm():
+    llm = SpyLLMClient({"answer": "Blended answer"})
+
+    memory.synthesize_answer(llm, "why join?", ["ans A", "ans B"])
+
+    assert "why join?" in llm.last_user_prompt
+    assert "ans A" in llm.last_user_prompt
+    assert "ans B" in llm.last_user_prompt
 
 
 def test_store_answer_canonicalizes_and_persists():
@@ -104,6 +124,17 @@ def test_store_answer_canonicalizes_and_persists():
     rows = db.list_memory_by_category(conn, "motivation")
     assert len(rows) == 1
     assert rows[0]["canonical_answer"] == "canonical version"
+
+
+def test_store_answer_sends_question_and_raw_answer_to_llm():
+    conn = _conn()
+    llm = SpyLLMClient({"canonical_answer": "canonical version"})
+    embedder = StubEmbeddingClient()
+
+    memory.store_answer(conn, llm, embedder, "why join?", "raw answer text", "motivation")
+
+    assert "why join?" in llm.last_user_prompt
+    assert "raw answer text" in llm.last_user_prompt
 
 
 def _vec_bytes(vector: list[float]) -> bytes:

@@ -44,8 +44,8 @@ def test_full_application_lifecycle_queued_to_done():
             {"index": 1, "is_formal": False},
         ]
     })
-    llm.register("Why do you want to work here?", {"category": "motivation"})
     llm.register("mission-driven work excites me", {"canonical_answer": "I'm drawn to mission-driven teams"})
+    llm.register("Why do you want to work here?", {"category": "motivation"})
     llm.register("cover letter", {"cover_letter": "Dear Acme team, I'm excited to apply..."})
     embedder = StubEmbeddingClient()
 

@@ -1,3 +1,5 @@
+import json
+
 from agent import db, memory, orchestrator
 from agent.embedding_client import StubEmbeddingClient
 from agent.llm_client import StubLLMClient
@@ -56,6 +58,21 @@ def test_step_advances_queued_to_fetching():
     assert db.get_application(conn, app_id)["state"] == "fetching"
 
 
+def test_fetching_persists_field_options_and_required():
+    conn, app_id = _setup()
+    fields = [FieldSpec(label="Preferred Location", field_type="select", options=["Remote", "New York"], required=True)]
+    fetcher = StubFetcher(fields)
+    llm = StubLLMClient()
+    embedder = StubEmbeddingClient()
+
+    orchestrator.step(conn, app_id, llm=llm, embedder=embedder, fetcher=fetcher, filler=StubFiller(), profile={})
+    orchestrator.step(conn, app_id, llm=llm, embedder=embedder, fetcher=fetcher, filler=StubFiller(), profile={})
+
+    field_row = db.list_fields(conn, app_id)[0]
+    assert json.loads(field_row["options"]) == ["Remote", "New York"]
+    assert field_row["required"] == 1
+
+
 def test_full_happy_path_reaches_ready_for_review():
     conn, app_id = _setup()
     fields = [
@@ -92,8 +109,8 @@ def test_hitl_gap_pauses_at_awaiting_hitl_then_resumes():
     llm.register("classify_fields", {
         "fields": [{"index": 0, "is_formal": False}]
     })
-    llm.register("Why this company?", {"category": "motivation"})
     llm.register("raw HITL answer", {"canonical_answer": "I value mission-driven teams"})
+    llm.register("Why this company?", {"category": "motivation"})
     llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
     embedder = StubEmbeddingClient()
     profile = {}

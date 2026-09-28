@@ -1,3 +1,4 @@
+import json
 import math
 import struct
 
@@ -65,8 +66,12 @@ def retrieve(conn, llm: LLMClient, embedder: EmbeddingClient, question: str) -> 
 
 def synthesize_answer(llm: LLMClient, question: str, candidates: list[str]) -> str:
     result = llm.complete_json(
-        system_prompt="Blend these past answers into one answer for the new question.",
-        user_prompt=question,
+        system_prompt=(
+            "Blend the given past answers into one answer for the new question. "
+            "Respond with only the answer text itself, no commentary, no meta-discussion, "
+            "and no requests for clarification."
+        ),
+        user_prompt=json.dumps({"question": question, "past_answers": candidates}),
         schema_hint='{"answer": str}',
     )
     return result["answer"]
@@ -81,8 +86,17 @@ def store_answer(
     category: str,
 ) -> int:
     canonicalized = llm.complete_json(
-        system_prompt="Extract a generalized, reusable version of this answer.",
-        user_prompt=raw_answer,
+        system_prompt=(
+            "The user answered a form question with the given raw answer. Extract a "
+            "generalized, reusable version of that exact answer for future similar "
+            "questions. Respond with only the answer text itself, never a definition, "
+            "explanation, or request for clarification, even if the answer is short or "
+            "looks like a bare word or number. Stay as close to the raw answer as "
+            "possible — do not add extra explanation, padding, or restate the question. "
+            "Only generalize wording that was specific to this one application (e.g. a "
+            "company name), nothing else."
+        ),
+        user_prompt=json.dumps({"question": question, "raw_answer": raw_answer}),
         schema_hint='{"canonical_answer": str}',
     )["canonical_answer"]
     vector = embedder.embed(canonicalized)
