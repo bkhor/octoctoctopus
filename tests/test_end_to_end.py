@@ -40,8 +40,8 @@ def test_full_application_lifecycle_queued_to_done():
     llm = StubLLMClient()
     llm.register("classify_fields", {
         "fields": [
-            {"label": "Full name", "category": "formal", "profile_key": "full_name"},
-            {"label": "Why do you want to work here?", "category": "motivation", "profile_key": ""},
+            {"index": 0, "is_formal": True},
+            {"index": 1, "is_formal": False},
         ]
     })
     llm.register("Why do you want to work here?", {"category": "motivation"})

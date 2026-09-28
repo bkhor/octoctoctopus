@@ -83,7 +83,7 @@ def test_cmd_run_processes_queued_application_to_ready_for_review():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Full name", "category": "formal", "profile_key": "full_name"}]
+        "fields": [{"index": 0, "is_formal": True}]
     })
     llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
     embedder = StubEmbeddingClient()
@@ -109,7 +109,7 @@ def test_cmd_run_skips_application_that_raises_but_continues_the_batch(capsys):
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Full name", "category": "formal", "profile_key": "full_name"}]
+        "fields": [{"index": 0, "is_formal": True}]
     })
     llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
     embedder = StubEmbeddingClient()
@@ -133,7 +133,7 @@ def test_cmd_run_stops_at_awaiting_hitl():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Why this company?", "category": "motivation", "profile_key": ""}]
+        "fields": [{"index": 0, "is_formal": False}]
     })
     llm.register("Why this company?", {"category": "motivation"})
     embedder = StubEmbeddingClient()

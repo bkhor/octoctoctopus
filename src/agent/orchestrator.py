@@ -1,3 +1,4 @@
+import json
 from typing import Protocol
 
 from . import db, memory
@@ -113,19 +114,27 @@ def _to(conn, app_id: int, new_state: ApplicationState) -> str:
 
 def _classify_fields(conn, app_id: int, llm: LLMClient) -> None:
     fields = db.list_fields(conn, app_id)
+    field_descriptions = [
+        {"index": i, "label": row["label"], "field_type": row["field_type"]}
+        for i, row in enumerate(fields)
+    ]
     result = llm.complete_json(
-        system_prompt="Classify each form field as formal or informal, and give a category.",
-        user_prompt="classify_fields",
-        schema_hint='{"fields": [{"label": str, "category": str, "profile_key": str}]}',
+        system_prompt=(
+            "For each form field below, decide if it is formal (name, contact info, "
+            "education, work authorization, standard demographic/EEO questions) or "
+            "informal (anything requiring a written answer specific to this job, like "
+            "motivation or experience questions). Respond with one entry per field index."
+        ),
+        user_prompt=f"classify_fields\n{json.dumps(field_descriptions)}",
+        schema_hint='{"fields": [{"index": int, "is_formal": bool}]}',
     )
-    by_label = {f["label"]: f for f in result["fields"]}
-    for row in fields:
-        info = by_label.get(row["label"])
-        if info is None:
-            continue
+    by_index = {f["index"]: f for f in result["fields"]}
+    for i, row in enumerate(fields):
+        info = by_index.get(i)
+        category = FORMAL_CATEGORY if info and info.get("is_formal") else "informal"
         conn.execute(
             "UPDATE application_fields SET category = ? WHERE id = ?",
-            (info["category"], row["id"]),
+            (category, row["id"]),
         )
     conn.commit()
 

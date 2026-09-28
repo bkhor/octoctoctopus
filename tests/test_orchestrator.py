@@ -65,7 +65,7 @@ def test_full_happy_path_reaches_ready_for_review():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Full name", "category": "formal", "profile_key": "full_name"}]
+        "fields": [{"index": 0, "is_formal": True}]
     })
     llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
     embedder = StubEmbeddingClient()
@@ -90,7 +90,7 @@ def test_hitl_gap_pauses_at_awaiting_hitl_then_resumes():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Why this company?", "category": "motivation", "profile_key": ""}]
+        "fields": [{"index": 0, "is_formal": False}]
     })
     llm.register("Why this company?", {"category": "motivation"})
     llm.register("raw HITL answer", {"canonical_answer": "I value mission-driven teams"})
@@ -135,7 +135,7 @@ def test_step_is_safe_to_call_after_simulated_restart():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Full name", "category": "formal", "profile_key": "full_name"}]
+        "fields": [{"index": 0, "is_formal": True}]
     })
     embedder = StubEmbeddingClient()
     profile = {"full_name": "Jane Doe"}
@@ -200,7 +200,7 @@ def test_file_field_auto_resolves_from_profile_regardless_of_category():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Resume", "category": "attachment", "profile_key": ""}]
+        "fields": [{"index": 0, "is_formal": False}]
     })
     llm.register("cover letter", {"cover_letter": "Dear hiring team, ..."})
     embedder = StubEmbeddingClient()
@@ -227,7 +227,7 @@ def test_file_field_without_profile_path_needs_input():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Resume", "category": "attachment", "profile_key": ""}]
+        "fields": [{"index": 0, "is_formal": False}]
     })
     embedder = StubEmbeddingClient()
     profile = {}
@@ -248,7 +248,7 @@ def test_file_field_with_memory_match_is_not_clobbered_by_synthesis():
     filler = StubFiller()
     llm = StubLLMClient()
     llm.register("classify_fields", {
-        "fields": [{"label": "Resume", "category": "attachment", "profile_key": ""}]
+        "fields": [{"index": 0, "is_formal": False}]
     })
     llm.register("Resume", {"category": "attachment", "answer": "I have attached my resume"})
     embedder = StubEmbeddingClient()
